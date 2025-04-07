@@ -12,15 +12,17 @@ load_dotenv()
 if "client" not in st.session_state:
     try:
         session = boto3.Session(
-            profile_name="XXX",
+            profile_name="XXXX",
             region_name="us-west-2")
         #init client
         bedrock_runtime = session.client('bedrock-runtime')
         bedrock = session.client('bedrock')
         bedrock_agent = session.client('bedrock-agent')
+        bedrock_agent_runtime = session.client('bedrock-agent-runtime')
         st.session_state.bedrock = bedrock
         st.session_state.bedrock_runtime = bedrock_runtime
         st.session_state.bedrock_agent = bedrock_agent
+        st.session_state.bedrock_agent_runtime = bedrock_agent_runtime
         st.session_state.messages = []
 
     except Exception as e:
@@ -141,54 +143,80 @@ if prompt := st.chat_input("Tell me something only an AI/ML Specialist would und
     # displaying our user prompt
     with st.chat_message("user"):
         st.markdown(prompt)
+
+        # call bedrock knowledge base retrieve and generatre api
+        if use_rag and selected_kb != "None":
+            # RAG logic
+            res = st.session_state.bedrock_agent_runtime.retrieve_and_generate(
+                input={
+                    'text': prompt
+                },
+                retrieveAndGenerateConfiguration={
+                    'type': 'KNOWLEDGE_BASE',
+                    'knowledgeBaseConfiguration': {
+                        'modelArn': model_id,
+                        'knowledgeBaseId': selected_kb_id
+                    }
+                }
+            )
+            # Extract passages from the response
+            print(res)
+            # passages = [item['content']['text'] for item in res['output']]
+
+            # Create an augmented prompt using the passages
+            # augmented_prompt = helper.create_augmented_prompt(prompt, passages)
+
+            # Update the prompt for the model
+            # prompt = augmented_prompt
         
-        # converse api
-        res = st.session_state.bedrock_runtime.converse(
-            modelId=model_id,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [{
-                        "text": prompt
-                        }]
-                }
-            ],
-            inferenceConfig={
-                "maxTokens": max_tokens,
-                "temperature": temperature,
-                "topP": top_p,
-                "stopSequences": [stop_sequences]
-            },
-            system=[
-                {
-                    "text": system_prompt
-                }
-            ]
-        )
+        # # converse api
+        # res = st.session_state.bedrock_runtime.converse(
+        #     modelId=model_id,
+        #     messages=[
+        #         {
+        #             "role": "user",
+        #             "content": [{
+        #                 "text": prompt
+        #                 }]
+        #         }
+        #     ],
+        #     inferenceConfig={
+        #         "maxTokens": max_tokens,
+        #         "temperature": temperature,
+        #         "topP": top_p,
+        #         "stopSequences": [stop_sequences]
+        #     },
+        #     system=[
+        #         {
+        #             "text": system_prompt
+        #         }
+        #     ]
+        # )
         # expandable response
+
         with st.expander("See response"):
-            st.write(res)
+            st.write(res['output']['text'])
+            st.write("Sources:", res['citations'])
 
     # Extract the response text from the output structure
     if res and 'output' in res:
         # Get the message content from the output
-        message = res['output'].get('message', {})
-        content = message.get('content', [])
+        message = res['output']['text']
         
         # Extract text from the first content item
-        if content and isinstance(content, list) and len(content) > 0:
-            response_text = content[0].get('text', '')
-        else:
-            response_text = "No response text found"
+        # if
+        #     response_text = message
+        # else:
+        #     response_text = "No response text found"
 
         # display response in message container
         with st.chat_message("assistant"):
-            st.markdown(response_text)
+            st.markdown(message)
 
         # add to chat history 
         st.session_state.messages.append({
             "role": "assistant", 
-            "content": response_text
+            "content": message
         })
 
         # display usage metrics
